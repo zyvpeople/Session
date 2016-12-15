@@ -11,7 +11,12 @@ import java.util.concurrent.TimeUnit
  * Created by zuzik on 12/15/16.
  */
 
-val session = Session(Token("0"), { just(Token("1")) })
+val session = Session(Token("0"), { token, scheduler ->
+    just(Object())
+            .delay(8L, TimeUnit.SECONDS, scheduler)
+            .observeOn(scheduler)
+            .flatMap { just(Token("1")) }
+})
 val mainThreadScheduler = Schedulers.from(Executors.newSingleThreadExecutor())
 
 fun main(args: Array<String>) {

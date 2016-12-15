@@ -2,6 +2,7 @@ package com.develop.zuzik
 
 import rx.Observable
 import rx.Observable.*
+import rx.Scheduler
 import rx.schedulers.Schedulers
 import rx.subjects.BehaviorSubject
 import java.util.concurrent.Executors
@@ -9,7 +10,7 @@ import java.util.concurrent.Executors
 /**
  * Created by zuzik on 12/15/16.
  */
-class Session(defaultToken: Token, private val refreshTokenRequestFactory: (Token) -> Observable<Token>) {
+class Session(defaultToken: Token, private val refreshTokenRequestFactory: (Token, Scheduler) -> Observable<Token>) {
 
     private val scheduler = Schedulers.from(Executors.newSingleThreadExecutor())
     private val stateSubject: BehaviorSubject<SessionState> = BehaviorSubject.create(ValidTokenSessionState(defaultToken))
@@ -34,7 +35,7 @@ class Session(defaultToken: Token, private val refreshTokenRequestFactory: (Toke
                                                 .flatMap {
                                                     if (exception is UnauthorizedException) {
                                                         stateSubject.onNext(RefreshingTokenSessionState())
-                                                        refreshTokenRequestFactory(token)
+                                                        refreshTokenRequestFactory(token, scheduler)
                                                                 .observeOn(scheduler)
                                                                 //todo handle error
                                                                 .flatMap {
@@ -48,9 +49,11 @@ class Session(defaultToken: Token, private val refreshTokenRequestFactory: (Toke
                                                 }
                                     }
                         }
+                    //return correct error (InvalidTokenSessionState -> some error, UnauthorizedSessionState -> Unauthorized)
                         else -> error(NotImplementedError())
                     }
                 }
+                .take(1)
     }
 
     private fun printThread(tag: String, id: Int) {
