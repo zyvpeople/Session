@@ -17,67 +17,60 @@ class Session(defaultToken: Token, private val refreshTokenRequestFactory: (Toke
 
     fun <T> execute(id: Int, requestFactory: (Token) -> Observable<T>): Observable<T> {
         return stateSubject
-                .filter { it !is RefreshingTokenSessionState }
+                .filter { doesNotRefreshToken(it) }
                 .observeOn(scheduler)
+                .doOnNext { printThread("Session(flatMap)", id) }
                 .flatMap {
-                    printThread("Session(flatMap)", id)
                     when (it) {
-                        is ValidTokenSessionState -> {
-                            val token = it.token
-                            requestFactory(it.token)
-                                    .observeOn(scheduler)
-                                    .onErrorResumeNext {
-                                        val exception = it
-                                        printThread("Session(onErrorResumeNext requestFactory)", id)
-                                        just(Object())
-                                                .flatMap { stateSubject }
-                                                .filter { it is ValidTokenSessionState && it.token == token }
-                                                .flatMap {
-                                                    if (exception is UnauthorizedException) {
-                                                        stateSubject.onNext(RefreshingTokenSessionState())
-                                                        refreshTokenRequestFactory(token, scheduler)
-                                                                .observeOn(scheduler)
-                                                                .doOnNext { printThread("Session(flatMap refreshTokenRequestFactory)", id) }
-                                                                .doOnNext { stateSubject.onNext(ValidTokenSessionState(it)) }
-                                                                .doOnError {
-                                                                    stateSubject.onNext(when (it) {
-                                                                        is UnauthorizedException -> UnauthorizedSessionState()
-                                                                        else -> InvalidTokenSessionState(token)
-                                                                    })
-                                                                }
-                                                                .flatMap { never<T>() }
-                                                    } else {
-                                                        Observable.error(exception)
-                                                    }
-                                                }
-                                    }
-                        }
+                        is ValidTokenSessionState -> handleValidSessionShate(id, it, requestFactory)
                         is UnauthorizedSessionState -> error(UnauthorizedException())
-                        is InvalidTokenSessionState -> {
-                            //TODO: duplicated with ValidTokenSessionState
-                            val lastValidToken = it.lastValidToken
-                            just(Object())
-                                    .flatMap { stateSubject }
-                                    .filter { it is InvalidTokenSessionState && it.lastValidToken == lastValidToken }
-                                    .flatMap {
-                                        stateSubject.onNext(RefreshingTokenSessionState())
-                                        refreshTokenRequestFactory(lastValidToken, scheduler)
-                                                .observeOn(scheduler)
-                                                .doOnNext { printThread("Session(flatMap refreshTokenRequestFactory)", id) }
-                                                .doOnNext { stateSubject.onNext(ValidTokenSessionState(it)) }
-                                                .doOnError {
-                                                    stateSubject.onNext(when (it) {
-                                                        is UnauthorizedException -> UnauthorizedSessionState()
-                                                        else -> InvalidTokenSessionState(lastValidToken)
-                                                    })
-                                                }
-                                                .flatMap { never<T>() }
-                                    }
-                        }
+                        is InvalidTokenSessionState -> handleInvalidSessionState<T>(id, it)
                         else -> error(NotImplementedError())
                     }
                 }
                 .take(1)
+    }
+
+    private fun doesNotRefreshToken(it: SessionState) = it !is RefreshingTokenSessionState
+
+    private fun <T> handleValidSessionShate(id: Int, state: ValidTokenSessionState, requestFactory: (Token) -> Observable<T>): Observable<T>? {
+        val token = state.token
+        return requestFactory(token)
+                .observeOn(scheduler)
+                .doOnError { printThread("Session(onErrorResumeNext requestFactory)", id) }
+                .onErrorResumeNext {
+                    val exception = it
+                    stateSubject
+                            .filter { it is ValidTokenSessionState && it.token == token }
+                            .flatMap {
+                                when (exception) {
+                                    is UnauthorizedException -> refreshTokenObservable<T>(id, token)
+                                    else -> error(exception)
+                                }
+                            }
+                }
+    }
+
+    private fun <T> handleInvalidSessionState(id: Int, it: InvalidTokenSessionState): Observable<T>? {
+        val token = it.lastValidToken
+        return stateSubject
+                .filter { it is InvalidTokenSessionState && it.lastValidToken == token }
+                .flatMap { refreshTokenObservable<T>(id, token) }
+    }
+
+    private fun <T> refreshTokenObservable(id: Int, lastValidToken: Token): Observable<T> {
+        stateSubject.onNext(RefreshingTokenSessionState())
+        return refreshTokenRequestFactory(lastValidToken, scheduler)
+                .observeOn(scheduler)
+                .doOnNext { printThread("Session(flatMap refreshTokenRequestFactory)", id) }
+                .doOnNext { stateSubject.onNext(ValidTokenSessionState(it)) }
+                .doOnError {
+                    stateSubject.onNext(when (it) {
+                        is UnauthorizedException -> UnauthorizedSessionState()
+                        else -> InvalidTokenSessionState(lastValidToken)
+                    })
+                }
+                .flatMap { never<T>() }
     }
 
     private fun printThread(tag: String, id: Int) {
@@ -85,8 +78,8 @@ class Session(defaultToken: Token, private val refreshTokenRequestFactory: (Toke
     }
 }
 
-interface SessionState
-data class ValidTokenSessionState(val token: Token) : SessionState
-class InvalidTokenSessionState(val lastValidToken: Token) : SessionState
-class RefreshingTokenSessionState : SessionState
-class UnauthorizedSessionState : SessionState
+private interface SessionState
+private data class ValidTokenSessionState(val token: Token) : SessionState
+private data class InvalidTokenSessionState(val lastValidToken: Token) : SessionState
+private class RefreshingTokenSessionState : SessionState
+private class UnauthorizedSessionState : SessionState

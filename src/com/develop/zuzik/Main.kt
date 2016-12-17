@@ -15,7 +15,7 @@ val session = Session(Token("0"), { token, scheduler ->
     just(Object())
             .delay(0L, TimeUnit.SECONDS, scheduler)
             .observeOn(scheduler)
-//            .flatMap { error<Token>(RuntimeException("no internet")) }
+            .flatMap { error<Token>(RuntimeException("no internet")) }
             .flatMap { error<Token>(UnauthorizedException()) }
             .flatMap { just(Token("1")) }
 })
@@ -27,7 +27,7 @@ fun main(args: Array<String>) {
     performRequest(10, 3L)
     performRequest(9)
     performRequest(8)
-//    performRequest(7)
+    performRequest(7)
 //    performRequest(6)
 //    performRequest(5)
 //    performRequest(4)
