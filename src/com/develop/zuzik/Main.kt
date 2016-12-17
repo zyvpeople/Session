@@ -1,6 +1,5 @@
 package com.develop.zuzik
 
-import rx.Observable
 import rx.Observable.error
 import rx.Observable.just
 import rx.schedulers.Schedulers
@@ -13,10 +12,10 @@ import java.util.concurrent.TimeUnit
 
 val session = Session(Token("0"), { token, scheduler ->
     just(Object())
-            .delay(0L, TimeUnit.SECONDS, scheduler)
+            .delay(4L, TimeUnit.SECONDS, scheduler)
             .observeOn(scheduler)
-            .flatMap { error<Token>(RuntimeException("no internet")) }
-            .flatMap { error<Token>(UnauthorizedException()) }
+//            .flatMap { error<Token>(RuntimeException("no internet")) }
+//            .flatMap { error<Token>(UnauthorizedException()) }
             .flatMap { just(Token("1")) }
 })
 val mainThreadScheduler = Schedulers.from(Executors.newSingleThreadExecutor())
@@ -28,8 +27,8 @@ fun main(args: Array<String>) {
     performRequest(9)
     performRequest(8)
     performRequest(7)
-//    performRequest(6)
-//    performRequest(5)
+    performRequest(6)
+    performRequest(5)
 //    performRequest(4)
 //    performRequest(3)
 //    performRequest(2)
@@ -48,8 +47,8 @@ fun performRequest(id: Int, delay: Long = 0L) {
                             val token = it
                             println("Main (token) $token")
                             just(id)
-                                    .delay(delay, TimeUnit.SECONDS)
                                     .observeOn(Schedulers.newThread())
+                                    .delay(delay, TimeUnit.SECONDS)
                                     .flatMap {
                                         printThread("Main (flatMap)", id)
                                         if (token.value == "0") {
