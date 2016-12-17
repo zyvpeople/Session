@@ -37,19 +37,43 @@ class Session(defaultToken: Token, private val refreshTokenRequestFactory: (Toke
                                                         stateSubject.onNext(RefreshingTokenSessionState())
                                                         refreshTokenRequestFactory(token, scheduler)
                                                                 .observeOn(scheduler)
-                                                                //todo handle error
-                                                                .flatMap {
-                                                                    printThread("Session(flatMap refreshTokenRequestFactory)", id)
-                                                                    stateSubject.onNext(ValidTokenSessionState(it))
-                                                                    never<T>()
+                                                                .doOnNext { printThread("Session(flatMap refreshTokenRequestFactory)", id) }
+                                                                .doOnNext { stateSubject.onNext(ValidTokenSessionState(it)) }
+                                                                .doOnError {
+                                                                    stateSubject.onNext(when (it) {
+                                                                        is UnauthorizedException -> UnauthorizedSessionState()
+                                                                        else -> InvalidTokenSessionState(token)
+                                                                    })
                                                                 }
+                                                                .flatMap { never<T>() }
                                                     } else {
                                                         Observable.error(exception)
                                                     }
                                                 }
                                     }
                         }
-                    //return correct error (InvalidTokenSessionState -> some error, UnauthorizedSessionState -> Unauthorized)
+                        is UnauthorizedSessionState -> error(UnauthorizedException())
+                        is InvalidTokenSessionState -> {
+                            //TODO: duplicated with ValidTokenSessionState
+                            val lastValidToken = it.lastValidToken
+                            just(Object())
+                                    .flatMap { stateSubject }
+                                    .filter { it is InvalidTokenSessionState && it.lastValidToken == lastValidToken }
+                                    .flatMap {
+                                        stateSubject.onNext(RefreshingTokenSessionState())
+                                        refreshTokenRequestFactory(lastValidToken, scheduler)
+                                                .observeOn(scheduler)
+                                                .doOnNext { printThread("Session(flatMap refreshTokenRequestFactory)", id) }
+                                                .doOnNext { stateSubject.onNext(ValidTokenSessionState(it)) }
+                                                .doOnError {
+                                                    stateSubject.onNext(when (it) {
+                                                        is UnauthorizedException -> UnauthorizedSessionState()
+                                                        else -> InvalidTokenSessionState(lastValidToken)
+                                                    })
+                                                }
+                                                .flatMap { never<T>() }
+                                    }
+                        }
                         else -> error(NotImplementedError())
                     }
                 }
@@ -63,6 +87,6 @@ class Session(defaultToken: Token, private val refreshTokenRequestFactory: (Toke
 
 interface SessionState
 data class ValidTokenSessionState(val token: Token) : SessionState
-class InvalidTokenSessionState : SessionState
+class InvalidTokenSessionState(val lastValidToken: Token) : SessionState
 class RefreshingTokenSessionState : SessionState
 class UnauthorizedSessionState : SessionState
