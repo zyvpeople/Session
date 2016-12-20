@@ -1,5 +1,7 @@
 package com.develop.zuzik
 
+import com.develop.zuzik.session.Session
+import com.develop.zuzik.session.UnauthorizedStrategy
 import rx.Observable.error
 import rx.Observable.just
 import rx.schedulers.Schedulers
@@ -10,14 +12,21 @@ import java.util.concurrent.TimeUnit
  * Created by zuzik on 12/15/16.
  */
 
-val session = Session(Token("0"), { token, scheduler ->
-    just(Object())
-            .delay(4L, TimeUnit.SECONDS, scheduler)
-            .observeOn(scheduler)
-//            .flatMap { error<Token>(RuntimeException("no internet")) }
-//            .flatMap { error<Token>(UnauthorizedException()) }
-            .flatMap { just(Token("1")) }
-})
+val session = Session(
+        Token("0"),
+        object : UnauthorizedStrategy {
+            override fun createUnauthorizedError(): Throwable = UnauthorizedException()
+
+            override fun isUnauthorizedError(error: Throwable): Boolean = error is UnauthorizedException
+        },
+        { token, scheduler ->
+            just(Object())
+                    .delay(4L, TimeUnit.SECONDS, scheduler)
+                    .observeOn(scheduler)
+                    .flatMap { error<Token>(RuntimeException("no internet")) }
+                    .flatMap { error<Token>(UnauthorizedException()) }
+                    .flatMap { just(Token("1")) }
+        })
 val mainThreadScheduler = Schedulers.from(Executors.newSingleThreadExecutor())
 
 fun main(args: Array<String>) {
@@ -43,7 +52,7 @@ fun performRequest(id: Int, delay: Long = 0L) {
             .observeOn(Schedulers.newThread())
             .flatMap {
                 session
-                        .execute(id, {
+                        .execute({
                             val token = it
                             println("Main (token) $token")
                             just(id)
