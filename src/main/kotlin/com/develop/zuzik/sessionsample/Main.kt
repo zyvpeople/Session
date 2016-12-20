@@ -1,7 +1,6 @@
-package com.develop.zuzik
+package com.develop.zuzik.sessionsample
 
 import com.develop.zuzik.session.Session
-import com.develop.zuzik.session.UnauthorizedStrategy
 import rx.Observable.error
 import rx.Observable.just
 import rx.schedulers.Schedulers
@@ -12,33 +11,22 @@ import java.util.concurrent.TimeUnit
  * Created by zuzik on 12/15/16.
  */
 
-val session = Session(
+val sessionSingleton = Session(
         Token("0"),
-        object : UnauthorizedStrategy {
-            override fun createUnauthorizedError(): Throwable = UnauthorizedException()
-
-            override fun isUnauthorizedError(error: Throwable): Boolean = error is UnauthorizedException
-        },
-        { token, scheduler ->
-            just(Object())
-                    .delay(4L, TimeUnit.SECONDS, scheduler)
-                    .observeOn(scheduler)
-//                    .flatMap { error<Token>(RuntimeException("no internet")) }
-//                    .flatMap { error<Token>(UnauthorizedException()) }
-                    .flatMap { just(Token("1")) }
-        })
+        UnauthorizedStrategy(),
+        RefreshTokenRequestObservableFactory().create())
 val mainThreadScheduler = Schedulers.from(Executors.newSingleThreadExecutor())
 
 fun main(args: Array<String>) {
 
-    session
+    sessionSingleton
             .token
-            .doOnNext { println("settings token $it") }
+            .doOnNext { println("save token $it to settings") }
             .subscribe()
 
-    session
+    sessionSingleton
             .unauthorized
-            .doOnNext { println("settings unauthorized") }
+            .doOnNext { println("clear settings") }
             .subscribe()
 
     performRequest(10, 3L)
@@ -47,11 +35,6 @@ fun main(args: Array<String>) {
     performRequest(7)
     performRequest(6)
     performRequest(5)
-//    performRequest(4)
-//    performRequest(3)
-//    performRequest(2)
-//    performRequest(1)
-//    performRequest(0)
 
     readLine()
 }
@@ -60,15 +43,13 @@ fun performRequest(id: Int, delay: Long = 0L) {
     just(Object())
             .observeOn(Schedulers.newThread())
             .flatMap {
-                session
+                sessionSingleton
                         .execute({
                             val token = it
-                            println("Main (token) $token")
                             just(id)
                                     .observeOn(Schedulers.newThread())
                                     .delay(delay, TimeUnit.SECONDS)
                                     .flatMap {
-                                        printThread("Main (flatMap)", id)
                                         if (token.value == "0") {
                                             error<Int>(UnauthorizedException())
                                         } else {
