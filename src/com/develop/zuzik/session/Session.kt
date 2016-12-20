@@ -11,12 +11,22 @@ import java.util.concurrent.Executors
 /**
  * Created by zuzik on 12/15/16.
  */
-class Session<out Token>(validToken: Token,
-                         private val unauthorizedStrategy: UnauthorizedStrategy,
-                         private val refreshTokenRequestObservableFactory: (Token, Scheduler) -> Observable<Token>) {
+class Session<Token>(validToken: Token,
+                     private val unauthorizedStrategy: UnauthorizedStrategy,
+                     private val refreshTokenRequestObservableFactory: (Token, Scheduler) -> Observable<Token>) {
 
     private val threadsSynchronizationScheduler = Schedulers.from(Executors.newSingleThreadExecutor())
     private val state: BehaviorSubject<SessionState> = BehaviorSubject.create(ValidTokenSessionState(validToken))
+
+    val token: Observable<Token>
+        get() = state
+                .filter { it is ValidTokenSessionState<*> }
+                .map { (it as ValidTokenSessionState<Token>).token }
+
+    val unauthorized: Observable<Void>
+        get() = state
+                .filter { it is UnauthorizedSessionState }
+                .map { null }
 
     fun <T> execute(requestObservableFactory: (Token) -> Observable<T>): Observable<T> {
         return state

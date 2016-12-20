@@ -23,14 +23,23 @@ val session = Session(
             just(Object())
                     .delay(4L, TimeUnit.SECONDS, scheduler)
                     .observeOn(scheduler)
-                    .flatMap { error<Token>(RuntimeException("no internet")) }
-                    .flatMap { error<Token>(UnauthorizedException()) }
+//                    .flatMap { error<Token>(RuntimeException("no internet")) }
+//                    .flatMap { error<Token>(UnauthorizedException()) }
                     .flatMap { just(Token("1")) }
         })
 val mainThreadScheduler = Schedulers.from(Executors.newSingleThreadExecutor())
 
 fun main(args: Array<String>) {
 
+    session
+            .token
+            .doOnNext { println("settings token $it") }
+            .subscribe()
+
+    session
+            .unauthorized
+            .doOnNext { println("settings unauthorized") }
+            .subscribe()
 
     performRequest(10, 3L)
     performRequest(9)
