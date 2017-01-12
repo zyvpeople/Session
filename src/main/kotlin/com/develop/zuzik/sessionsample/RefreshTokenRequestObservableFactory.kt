@@ -7,14 +7,18 @@ import java.util.concurrent.TimeUnit
 /**
  * Created by zuzik on 12/20/16.
  */
-class RefreshTokenRequestObservableFactory {
+class RefreshTokenRequestObservableFactory(private val simulatedError: SimulatedError) {
 
     fun create(): (Token, Scheduler) -> Observable<Token> = { token, scheduler ->
-        Observable.just(Object())
-                .delay(4L, TimeUnit.SECONDS, scheduler)
-                .observeOn(scheduler)
-//                    .flatMap { error<Token>(RuntimeException("no internet")) }
-//                    .flatMap { error<Token>(UnauthorizedException()) }
-                .flatMap { Observable.just(Token("1")) }
+        Observable
+                .timer(4L, TimeUnit.SECONDS, scheduler)
+                .flatMap {
+                    when (simulatedError) {
+                        SimulatedError.NO_INTERNET -> error(RuntimeException("no internet"))
+                        SimulatedError.UNAUTHORIZED -> error(UnauthorizedException())
+                        SimulatedError.NONE -> Observable.just(Token.validToken())
+                    }
+                }
+                .subscribeOn(scheduler)
     }
 }

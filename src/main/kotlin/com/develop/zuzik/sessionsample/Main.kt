@@ -1,76 +1,56 @@
 package com.develop.zuzik.sessionsample
 
 import com.develop.zuzik.session.Session
-import rx.Observable.error
-import rx.Observable.just
+import rx.Observable.*
 import rx.schedulers.Schedulers
-import java.util.concurrent.Executors
+import java.util.*
 import java.util.concurrent.TimeUnit
 
 /**
  * Created by zuzik on 12/15/16.
  */
 
-val sessionSingleton = Session(
-        Token("0"),
+val session = Session(
+        Token.invalidToken(),
         UnauthorizedStrategy(),
-        RefreshTokenRequestObservableFactory().create())
-val mainThreadScheduler = Schedulers.from(Executors.newSingleThreadExecutor())
+        RefreshTokenRequestObservableFactory(SimulatedError.NONE).create())
 
 fun main(args: Array<String>) {
 
-    sessionSingleton
-            .token
+    val tokenChangedObservable = session.token
+    val authorizationFailedObservable = session.unauthorized
+
+    tokenChangedObservable
             .doOnNext { println("save token $it to settings") }
             .subscribe()
 
-    sessionSingleton
-            .unauthorized
+    authorizationFailedObservable
             .doOnNext { println("clear settings") }
             .subscribe()
 
-    performRequest(10, 3L)
-    performRequest(9)
-    performRequest(8)
-    performRequest(7)
-    performRequest(6)
-    performRequest(5)
+    performFakeRequest(1)
+    performFakeRequest(2)
+    performFakeRequest(3)
 
     readLine()
 }
 
-fun performRequest(id: Int, delay: Long = 0L) {
-    just(Object())
-            .observeOn(Schedulers.newThread())
-            .flatMap {
-                sessionSingleton
-                        .execute({
-                            val token = it
-                            just(id)
-                                    .observeOn(Schedulers.newThread())
-                                    .delay(delay, TimeUnit.SECONDS)
-                                    .flatMap {
-                                        if (token.value == "0") {
-                                            error<Int>(UnauthorizedException())
-                                        } else {
-                                            just(it)
-                                        }
-                                    }
-                        })
-            }
-            .observeOn(mainThreadScheduler)
+fun performFakeRequest(requestId: Int) {
+    session
+            .execute({ token ->
+                timer(Random().nextInt(5).toLong(), TimeUnit.SECONDS)
+                        .flatMap {
+                            val shouldSimulateUnauthorizedError = !token.isValid()
+                            if (shouldSimulateUnauthorizedError) {
+                                error<Int>(UnauthorizedException())
+                            } else {
+                                just(it)
+                            }
+                        }
+                        .subscribeOn(Schedulers.newThread())
+            })
             .subscribe(
-                    {
-                        println("onNext: id=$id")
-                    },
-                    {
-                        println("onError: id=$id value=$it")
-                    },
-                    {
-                        println("onCompleted: id=$id")
-                    })
-}
-
-private fun printThread(tag: String, id: Int) {
-    println("$tag: ${Thread.currentThread().id} id: $id")
+                    { println("onNext: requestId=$requestId") },
+                    { println("onError: requestId=$requestId error=$it") },
+                    { println("onCompleted: requestId=$requestId") })
 }
